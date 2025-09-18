@@ -135,7 +135,7 @@ async function downloadAndParseXML() {
         const normalized = regNum.trim().toUpperCase();
         dataMap.set(normalized, {
           registration_number: regNum,
-          company_name: producer.Name || producer.CompanyName || producer.name || producer.company_name || '',
+          company_name: producer.ProducerName || producer.Name || producer.CompanyName || producer.name || '',
           vat_number: producer.VATNumber || producer.UstIdNr || producer.vat_number || '',
           tax_number: producer.TaxNumber || producer.Steuernummer || producer.tax_number || '',
           address: producer.Address || producer.address || '',
