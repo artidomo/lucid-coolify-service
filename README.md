@@ -49,10 +49,13 @@ In Coolify → Application → Environment Variables:
 ```
 ZSVR_TOKEN=DD05A5841ACCB874003B660CBB98DC6BF2D75A036F4DEA448793C3C962FEF3E7
 INTERNAL_API_KEY=geheim123artidomo
+LUCID_API_URL=https://lucid.verpackungsregister.org/api/v1/public-register/download
 CACHE_TTL_HOURS=24
 CACHE_DIR=/data
 TZ=Europe/Berlin
 ```
+
+**WICHTIG:** Der ZSVR_TOKEN und INTERNAL_API_KEY MÜSSEN gesetzt werden, sonst funktioniert der Service nicht!
 
 ### Schritt 6: Speicher einrichten
 1. In Coolify → Application → Storages

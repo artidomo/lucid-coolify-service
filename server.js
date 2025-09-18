@@ -18,10 +18,13 @@ const CACHE_FILE = path.join(CACHE_DIR, 'lucid-cache.json');
 
 // Konfiguration aus Umgebungsvariablen
 const config = {
-  zsvr_token: process.env.ZSVR_TOKEN || 'DD05A5841ACCB874003B660CBB98DC6BF2D75A036F4DEA448793C3C962FEF3E7',
+  // Token MUSS als Umgebungsvariable gesetzt werden in Coolify
+  zsvr_token: process.env.ZSVR_TOKEN || '',
+  // API Key für interne Authentifizierung - MUSS in Coolify gesetzt werden
   internal_api_key: process.env.INTERNAL_API_KEY || '',
   cache_ttl_hours: parseInt(process.env.CACHE_TTL_HOURS || '24'),
-  api_url: 'https://lucid.verpackungsregister.org/api/v1/public-register/download'
+  // Korrekte LUCID API URL - kann über Umgebungsvariable überschrieben werden
+  api_url: process.env.LUCID_API_URL || 'https://registerabruf.verpackungsregister.org/v1/listofproducers'
 };
 
 // In-Memory Cache für schnelle Zugriffe
@@ -46,9 +49,12 @@ app.use((req, res, next) => {
  */
 async function downloadAndParseXML() {
   console.log('[LUCID] Starte Download der XML-Daten...');
+  console.log('[LUCID] URL:', config.api_url);
+  console.log('[LUCID] Token (erste 20 Zeichen):', config.zsvr_token.substring(0, 20) + '...');
   
   try {
     // Download XML mit Token
+    console.log('[LUCID] Sende Anfrage an LUCID API...');
     const response = await axios({
       method: 'GET',
       url: config.api_url,
@@ -62,9 +68,13 @@ async function downloadAndParseXML() {
       maxBodyLength: 500 * 1024 * 1024
     });
 
-    console.log('[LUCID] XML heruntergeladen, starte Parsing...');
+    console.log('[LUCID] Response Status:', response.status);
+    console.log('[LUCID] Response Headers:', JSON.stringify(response.headers));
+    console.log('[LUCID] Response Größe:', response.data.length, 'Bytes');
+    console.log('[LUCID] Erste 500 Zeichen der Response:', response.data.substring(0, 500));
 
     // Parse XML mit fast-xml-parser (effizienter als xml2js)
+    console.log('[LUCID] Starte XML Parsing...');
     const parser = new XMLParser({
       ignoreAttributes: false,
       attributeNamePrefix: '',
@@ -72,26 +82,37 @@ async function downloadAndParseXML() {
     });
     
     const result = parser.parse(response.data);
+    console.log('[LUCID] XML geparst, prüfe Struktur...');
+    console.log('[LUCID] Root Keys:', Object.keys(result || {}));
     
     // Finde die Produzenten im XML (Struktur kann variieren)
     let producers = [];
     
-    // Verschiedene mögliche Strukturen prüfen
+    // Debug: Zeige die XML-Struktur
     if (result?.producers?.producer) {
+      console.log('[LUCID] Gefunden: result.producers.producer');
       producers = Array.isArray(result.producers.producer) 
         ? result.producers.producer 
         : [result.producers.producer];
     } else if (result?.RegisterExcerpt?.Producer) {
+      console.log('[LUCID] Gefunden: result.RegisterExcerpt.Producer');
       producers = Array.isArray(result.RegisterExcerpt.Producer)
         ? result.RegisterExcerpt.Producer
         : [result.RegisterExcerpt.Producer];
     } else if (result?.Producers?.Producer) {
+      console.log('[LUCID] Gefunden: result.Producers.Producer');
       producers = Array.isArray(result.Producers.Producer)
         ? result.Producers.Producer
         : [result.Producers.Producer];
+    } else {
+      console.log('[LUCID] WARNUNG: Keine bekannte Struktur gefunden!');
+      console.log('[LUCID] Vollständige Struktur (erste Ebene):', JSON.stringify(result, null, 2).substring(0, 1000));
     }
 
     console.log(`[LUCID] ${producers.length} Produzenten gefunden`);
+    if (producers.length > 0) {
+      console.log('[LUCID] Beispiel Produzent:', JSON.stringify(producers[0], null, 2).substring(0, 500));
+    }
 
     // In Map speichern für schnelle Lookups
     const dataMap = new Map();
@@ -117,9 +138,25 @@ async function downloadAndParseXML() {
       }
     }
 
+    console.log(`[LUCID] Map erstellt mit ${dataMap.size} Einträgen`);
     return dataMap;
   } catch (error) {
-    console.error('[LUCID] Fehler beim Download/Parsing:', error.message);
+    console.error('[LUCID] FEHLER beim Download/Parsing!');
+    console.error('[LUCID] Error Type:', error.constructor.name);
+    console.error('[LUCID] Error Message:', error.message);
+    if (error.response) {
+      console.error('[LUCID] Response Status:', error.response.status);
+      console.error('[LUCID] Response Headers:', error.response.headers);
+      console.error('[LUCID] Response Data (erste 1000 Zeichen):', 
+        error.response.data ? String(error.response.data).substring(0, 1000) : 'Keine Daten');
+    }
+    if (error.config) {
+      console.error('[LUCID] Request Config:', {
+        url: error.config.url,
+        method: error.config.method,
+        headers: error.config.headers
+      });
+    }
     throw error;
   }
 }
@@ -336,9 +373,10 @@ app.get('/api/stats', (req, res) => {
 // === STARTUP ===
 
 async function startServer() {
-  console.log('[START] LUCID Lookup Service startet...');
+  console.log('[START] LUCID Lookup Service startet... (Debug Version v2)');
   console.log(`[CONFIG] Cache TTL: ${config.cache_ttl_hours} Stunden`);
   console.log(`[CONFIG] API Key: ${config.internal_api_key ? 'Konfiguriert' : 'Nicht gesetzt'}`);
+  console.log(`[CONFIG] LUCID API URL: ${config.api_url}`);
 
   // Versuche Cache von Disk zu laden
   const loadedFromDisk = await loadCacheFromDisk();
