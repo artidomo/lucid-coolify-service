@@ -58,8 +58,10 @@ async function downloadAndParseXML() {
     const response = await axios({
       method: 'GET',
       url: config.api_url,
+      params: {
+        token: config.zsvr_token  // Token als URL-Parameter laut API-Doku!
+      },
       headers: {
-        'Authorization': `Bearer ${config.zsvr_token}`,
         'Accept': 'application/xml'
       },
       responseType: 'text',
