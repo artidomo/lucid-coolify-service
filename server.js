@@ -89,12 +89,17 @@ async function downloadAndParseXML() {
     
     // Finde die Produzenten im XML (Struktur kann variieren)
     let producers = [];
-    
+
     // Debug: Zeige die XML-Struktur
-    if (result?.producers?.producer) {
+    if (result?.Root?.ListOfProducers?.Producer) {
+      console.log('[LUCID] Gefunden: Root.ListOfProducers.Producer');
+      producers = Array.isArray(result.Root.ListOfProducers.Producer)
+        ? result.Root.ListOfProducers.Producer
+        : [result.Root.ListOfProducers.Producer];
+    } else if (result?.producers?.producer) {
       console.log('[LUCID] Gefunden: result.producers.producer');
-      producers = Array.isArray(result.producers.producer) 
-        ? result.producers.producer 
+      producers = Array.isArray(result.producers.producer)
+        ? result.producers.producer
         : [result.producers.producer];
     } else if (result?.RegisterExcerpt?.Producer) {
       console.log('[LUCID] Gefunden: result.RegisterExcerpt.Producer');
