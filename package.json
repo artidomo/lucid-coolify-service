@@ -1,0 +1,17 @@
+{
+  "name": "lucid-lookup-service",
+  "version": "1.0.0",
+  "description": "LUCID Verpackungsregister Lookup Service für artidomo",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "axios": "^1.6.8",
+    "fast-xml-parser": "^4.3.6",
+    "node-cron": "^3.0.3",
+    "cors": "^2.8.5"
+  }
+}
