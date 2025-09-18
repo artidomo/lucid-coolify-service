@@ -263,9 +263,24 @@ app.get('/healthz', (req, res) => {
 });
 
 /**
- * LUCID Validierung
+ * LUCID Validierung - GESCHÜTZT mit API-Key
  */
 app.get('/api/lucid/validate', async (req, res) => {
+  // API-Key Authentifizierung
+  const apiKey = req.headers['x-api-key'] || req.headers['authorization'];
+
+  if (!config.internal_api_key) {
+    console.error('[SECURITY] WARNUNG: INTERNAL_API_KEY nicht gesetzt!');
+  }
+
+  if (apiKey !== config.internal_api_key) {
+    console.log('[SECURITY] Ungültiger API-Key Versuch');
+    return res.status(401).json({
+      ok: false,
+      error: 'Unauthorized - Invalid API Key'
+    });
+  }
+
   const { lucid } = req.query;
   
   if (!lucid) {
