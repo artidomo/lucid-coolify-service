@@ -66,8 +66,8 @@ async function downloadAndParseXML() {
       },
       responseType: 'text',
       timeout: 300000, // 5 Minuten Timeout
-      maxContentLength: 500 * 1024 * 1024, // 500MB max
-      maxBodyLength: 500 * 1024 * 1024
+      maxContentLength: 2000 * 1024 * 1024, // 2GB max - LUCID Datei ist sehr groß!
+      maxBodyLength: 2000 * 1024 * 1024
     });
 
     console.log('[LUCID] Response Status:', response.status);
