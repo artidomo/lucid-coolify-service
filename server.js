@@ -148,22 +148,47 @@ async function downloadAndParseXML() {
     console.log(`[LUCID] Map erstellt mit ${dataMap.size} Einträgen`);
     return dataMap;
   } catch (error) {
-    console.error('[LUCID] FEHLER beim Download/Parsing!');
+    console.error('[LUCID] ❌ FEHLER beim Download/Parsing!');
     console.error('[LUCID] Error Type:', error.constructor.name);
     console.error('[LUCID] Error Message:', error.message);
+    console.error('[LUCID] Full Error:', error);
+
     if (error.response) {
       console.error('[LUCID] Response Status:', error.response.status);
-      console.error('[LUCID] Response Headers:', error.response.headers);
-      console.error('[LUCID] Response Data (erste 1000 Zeichen):', 
-        error.response.data ? String(error.response.data).substring(0, 1000) : 'Keine Daten');
+      console.error('[LUCID] Response Status Text:', error.response.statusText);
+      console.error('[LUCID] Response Headers:', JSON.stringify(error.response.headers));
+      console.error('[LUCID] Response Data (erste 2000 Zeichen):',
+        error.response.data ? String(error.response.data).substring(0, 2000) : 'Keine Daten');
+
+      // Spezielle Behandlung für 429 Rate Limit
+      if (error.response.status === 429) {
+        console.error('[LUCID] 🔴 RATE LIMIT ERREICHT! API blockiert weitere Anfragen.');
+        console.error('[LUCID] Retry-After Header:', error.response.headers['retry-after']);
+      }
     }
+
     if (error.config) {
-      console.error('[LUCID] Request Config:', {
+      console.error('[LUCID] Request URL:', error.config.url);
+      console.error('[LUCID] Full Request Config:', {
         url: error.config.url,
         method: error.config.method,
-        headers: error.config.headers
+        headers: error.config.headers,
+        params: error.config.params,
+        timeout: error.config.timeout
       });
     }
+
+    // Netzwerk-Fehler
+    if (error.code) {
+      console.error('[LUCID] Error Code:', error.code);
+      if (error.code === 'ECONNABORTED') {
+        console.error('[LUCID] ⏱️ TIMEOUT! Download hat zu lange gedauert.');
+      }
+      if (error.code === 'ENOTFOUND') {
+        console.error('[LUCID] 🔍 DNS FEHLER! Server nicht gefunden.');
+      }
+    }
+
     throw error;
   }
 }
@@ -456,6 +481,67 @@ app.post('/admin/test-load', async (req, res) => {
     if (error.response?.status === 429) {
       console.error('[TEST-LOAD] Rate Limit erreicht! Warte vor nächstem Versuch.');
     }
+  }
+});
+
+/**
+ * DEBUG: Teste LUCID API direkt
+ */
+app.get('/admin/test-api', async (req, res) => {
+  // API Key Check
+  const apiKey = req.headers['x-api-key'] || req.query.api_key;
+  if (config.internal_api_key && apiKey !== config.internal_api_key) {
+    return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  }
+
+  console.log('[DEBUG] Teste LUCID API direkt...');
+
+  try {
+    // Teste mit kleinerem Timeout und Header-Only Request
+    const testResponse = await axios.head(config.api_url, {
+      params: { token: config.zsvr_token },
+      timeout: 10000
+    });
+
+    console.log('[DEBUG] HEAD Request erfolgreich');
+    console.log('[DEBUG] Status:', testResponse.status);
+    console.log('[DEBUG] Headers:', testResponse.headers);
+
+    // Jetzt versuche ersten Teil zu laden
+    const partialResponse = await axios.get(config.api_url, {
+      params: { token: config.zsvr_token },
+      headers: {
+        'Accept': 'application/xml',
+        'Range': 'bytes=0-10000' // Nur erste 10KB
+      },
+      timeout: 30000
+    });
+
+    res.json({
+      ok: true,
+      headStatus: testResponse.status,
+      contentType: testResponse.headers['content-type'],
+      contentLength: testResponse.headers['content-length'],
+      serverHeaders: testResponse.headers,
+      firstBytes: partialResponse.data.substring(0, 1000),
+      apiUrl: config.api_url,
+      tokenPresent: !!config.zsvr_token
+    });
+
+  } catch (error) {
+    console.error('[DEBUG] API Test fehlgeschlagen:', error.message);
+
+    res.status(500).json({
+      ok: false,
+      error: error.message,
+      code: error.code,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      responseData: error.response?.data ? String(error.response.data).substring(0, 1000) : null,
+      apiUrl: config.api_url,
+      tokenPresent: !!config.zsvr_token,
+      tokenLength: config.zsvr_token ? config.zsvr_token.length : 0
+    });
   }
 });
 
