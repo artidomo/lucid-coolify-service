@@ -399,42 +399,64 @@ app.get('/api/stats', (req, res) => {
 // === STARTUP ===
 
 async function startServer() {
-  console.log('[START] LUCID Lookup Service startet... (v3 - Rate Limit Fix)');
+  console.log('[START] LUCID Lookup Service startet... (v4 - Stable)');
   console.log(`[CONFIG] Cache TTL: ${config.cache_ttl_hours} Stunden`);
   console.log(`[CONFIG] API Key: ${config.internal_api_key ? 'Konfiguriert' : 'Nicht gesetzt'}`);
-  console.log(`[CONFIG] LUCID API URL: ${config.api_url}`);
+  console.log(`[CONFIG] Node Heap: ${(process.memoryUsage().heapTotal / 1024 / 1024).toFixed(0)} MB`);
+
+  // Erhöhe Node.js Memory Limit für 500 MB XML
+  if (process.env.NODE_OPTIONS !== '--max-old-space-size=4096') {
+    console.log('[CONFIG] ⚠️ Node Memory Limit niedrig - setze NODE_OPTIONS=--max-old-space-size=4096');
+  }
 
   // Versuche Cache von Disk zu laden
   const loadedFromDisk = await loadCacheFromDisk();
 
   if (!loadedFromDisk) {
     console.log('[START] ⚠️ Kein Cache auf Disk gefunden');
-    console.log('[START] 🔴 AUTOMATISCHES LADEN DEAKTIVIERT (429 Rate Limit Vermeidung)');
-    console.log('[START] ℹ️ Cache kann manuell über /admin/refresh geladen werden');
-    console.log('[START] ℹ️ Oder automatisch beim ersten API-Request (mit Verzögerung)');
-    // NICHT automatisch laden beim Start - verhindert 429!
+    console.log('[START] ℹ️ Cache wird beim Cron-Job (2:30 Uhr) oder manuell geladen');
+    console.log('[START] ℹ️ Service läuft trotzdem und antwortet mit "not_found" bis Cache geladen');
   } else {
     console.log(`[START] ✅ Cache von Disk geladen: ${memoryCache.data.size} Einträge`);
-    // Prüfe Alter aber lade NICHT automatisch nach
     const hoursSinceUpdate = (Date.now() - memoryCache.lastUpdate) / (1000 * 60 * 60);
-    if (hoursSinceUpdate >= config.cache_ttl_hours) {
-      console.log(`[START] ⚠️ Cache veraltet (${hoursSinceUpdate.toFixed(1)}h alt)`);
-      console.log('[START] ℹ️ Nutze /admin/refresh für manuelles Update');
-      // KEIN automatisches Update mehr!
+    console.log(`[START] Cache-Alter: ${hoursSinceUpdate.toFixed(1)} Stunden`);
+
+    // NUR wenn Cache SEHR alt ist (>48h), dann einmalig nachladen
+    if (hoursSinceUpdate > 48) {
+      console.log('[START] Cache älter als 48h - starte einmaliges Update in 30 Sekunden...');
+      setTimeout(() => {
+        updateCache(true).catch(err => {
+          console.error('[START] Update fehlgeschlagen:', err.message);
+        });
+      }, 30000); // 30 Sekunden Verzögerung nach Start
     }
   }
 
-  // CRON DEAKTIVIERT - Manuelle Updates über /admin/refresh
-  // Rate Limit Problem vermeiden
-  console.log('[CRON] ⚠️ Automatische Updates DEAKTIVIERT');
-  console.log('[CRON] ℹ️ Nutze POST /admin/refresh mit API-Key für Updates');
+  // Cron Job WIEDER AKTIVIERT - aber mit Sicherheitsmechanismen
+  cron.schedule('30 2 * * *', async () => {
+    console.log('[CRON] Automatisches Cache Update gestartet (2:30 Uhr)');
 
-  // cron.schedule('30 2 * * *', () => {
-  //   console.log('[CRON] Automatisches Cache Update gestartet');
-  //   updateCache(true);
-  // }, {
-  //   timezone: 'Europe/Berlin'
-  // });
+    // Prüfe ob nicht schon kürzlich aktualisiert
+    if (memoryCache.lastUpdate) {
+      const hoursSinceUpdate = (Date.now() - memoryCache.lastUpdate) / (1000 * 60 * 60);
+      if (hoursSinceUpdate < 20) {
+        console.log(`[CRON] Skip - Cache erst ${hoursSinceUpdate.toFixed(1)}h alt`);
+        return;
+      }
+    }
+
+    try {
+      await updateCache(true);
+      console.log('[CRON] Cache Update erfolgreich');
+    } catch (error) {
+      console.error('[CRON] Cache Update fehlgeschlagen:', error.message);
+      // Kein Crash - Service läuft weiter mit altem Cache
+    }
+  }, {
+    timezone: 'Europe/Berlin'
+  });
+
+  console.log('[CRON] ✅ Automatische Updates aktiviert (täglich 2:30 Uhr)');
 
   // Server starten
   app.listen(PORT, () => {
