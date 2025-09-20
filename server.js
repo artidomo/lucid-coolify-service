@@ -377,8 +377,22 @@ app.post('/admin/refresh', async (req, res) => {
 /**
  * SOFORTIGER Cache Test - NUR FÜR TESTS!
  * Lädt die komplette 500MB XML OHNE Verzögerung
+ *
+ * ⚠️ WARNUNG: Sollte nach Tests entfernt werden!
+ * ⚠️ Kann Rate-Limits auslösen wenn zu oft aufgerufen!
  */
 app.post('/admin/test-load', async (req, res) => {
+  // SICHERHEIT: Nur in Development-Umgebung ODER mit speziellem Test-Key
+  const isTestEnvironment = process.env.NODE_ENV === 'development' ||
+                           process.env.ENABLE_TEST_ENDPOINTS === 'true';
+
+  if (!isTestEnvironment) {
+    return res.status(404).json({
+      ok: false,
+      error: 'Endpoint nicht verfügbar in Produktion'
+    });
+  }
+
   // Prüfe API Key
   if (config.internal_api_key) {
     const providedKey = req.headers['x-api-key'] || req.query.api_key;
@@ -389,6 +403,18 @@ app.post('/admin/test-load', async (req, res) => {
       });
     }
   }
+
+  // Rate Limit Check - verhindere mehrfache Aufrufe
+  const lastTestLoad = memoryCache.lastTestLoad || 0;
+  const timeSinceLastTest = Date.now() - lastTestLoad;
+  if (timeSinceLastTest < 300000) { // 5 Minuten Sperre
+    return res.status(429).json({
+      ok: false,
+      error: `Rate Limit: Warte noch ${Math.ceil((300000 - timeSinceLastTest) / 1000)} Sekunden`,
+      nextAllowedIn: Math.ceil((300000 - timeSinceLastTest) / 1000)
+    });
+  }
+  memoryCache.lastTestLoad = Date.now();
 
   console.log('[TEST-LOAD] 🚀 SOFORTIGER TEST-DOWNLOAD GESTARTET!');
   console.log('[TEST-LOAD] Lade 500MB XML von LUCID...');
