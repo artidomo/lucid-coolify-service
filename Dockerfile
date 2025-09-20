@@ -9,6 +9,9 @@ RUN npm install --production
 # Kopiere den Server-Code
 COPY server.js ./
 
+# Kopiere Initial-Cache falls vorhanden (für sofortigen Start)
+COPY initial-cache.json /data/lucid-cache.json
+
 # Erstelle Datenverzeichnis
 RUN mkdir -p /data
 

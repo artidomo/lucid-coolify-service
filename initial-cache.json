@@ -1,0 +1,51 @@
+{
+  "lastUpdate": 1726819200000,
+  "count": 5,
+  "data": [
+    ["DE1234567890123", {
+      "registration_number": "DE1234567890123",
+      "company_name": "Test GmbH",
+      "vat_number": "DE123456789",
+      "tax_number": "123/456/78910",
+      "address": "Teststraße 1",
+      "city": "Berlin",
+      "postal_code": "10115"
+    }],
+    ["DE9876543210987", {
+      "registration_number": "DE9876543210987",
+      "company_name": "Muster AG",
+      "vat_number": "DE987654321",
+      "tax_number": "987/654/32109",
+      "address": "Musterweg 5",
+      "city": "München",
+      "postal_code": "80331"
+    }],
+    ["DE5555666677778", {
+      "registration_number": "DE5555666677778",
+      "company_name": "artidomo GmbH",
+      "vat_number": "DE316906852",
+      "tax_number": "215/5815/2394",
+      "address": "Hauptstraße 10",
+      "city": "Hamburg",
+      "postal_code": "20095"
+    }],
+    ["TEST123", {
+      "registration_number": "TEST123",
+      "company_name": "Test Firma",
+      "vat_number": "DE111222333",
+      "tax_number": "111/222/33344",
+      "address": "Testplatz 1",
+      "city": "Köln",
+      "postal_code": "50667"
+    }],
+    ["DE3141592653589", {
+      "registration_number": "DE3141592653589",
+      "company_name": "Pi Company",
+      "vat_number": "DE314159265",
+      "tax_number": "314/159/26535",
+      "address": "Kreisstraße 3.14",
+      "city": "Frankfurt",
+      "postal_code": "60311"
+    }]
+  ]
+}
