@@ -19,7 +19,8 @@ RUN mkdir -p /data
 EXPOSE 3000
 
 # WICHTIG: Erhöhe Node.js Memory Limit für 500MB XML Verarbeitung
-ENV NODE_OPTIONS="--max-old-space-size=4096"
+# MUSS VOR CMD gesetzt werden!
+ENV NODE_OPTIONS="--max-old-space-size=8192"
 
 # Health Check mit längeren Timeouts für große Downloads
 # Start-Period: 60s gibt dem Service Zeit zum Laden
