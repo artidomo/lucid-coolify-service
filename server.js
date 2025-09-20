@@ -350,25 +350,86 @@ app.post('/admin/refresh', async (req, res) => {
   if (config.internal_api_key) {
     const providedKey = req.headers['x-api-key'] || req.query.api_key;
     if (providedKey !== config.internal_api_key) {
-      return res.status(401).json({ 
-        ok: false, 
-        error: 'Ungültiger API Key' 
+      return res.status(401).json({
+        ok: false,
+        error: 'Ungültiger API Key'
       });
     }
   }
 
+  // Sofort-Response damit Request nicht timeout
+  res.json({
+    ok: true,
+    message: 'Cache-Update gestartet im Hintergrund. Prüfe /api/stats für Status.',
+    currentEntries: memoryCache.data.size
+  });
+
+  // Starte Update im Hintergrund
+  updateCache(true)
+    .then(() => {
+      console.log('[ADMIN] Cache-Update erfolgreich abgeschlossen');
+    })
+    .catch((error) => {
+      console.error('[ADMIN] Cache-Update fehlgeschlagen:', error);
+    });
+});
+
+/**
+ * SOFORTIGER Cache Test - NUR FÜR TESTS!
+ * Lädt die komplette 500MB XML OHNE Verzögerung
+ */
+app.post('/admin/test-load', async (req, res) => {
+  // Prüfe API Key
+  if (config.internal_api_key) {
+    const providedKey = req.headers['x-api-key'] || req.query.api_key;
+    if (providedKey !== config.internal_api_key) {
+      return res.status(401).json({
+        ok: false,
+        error: 'Ungültiger API Key'
+      });
+    }
+  }
+
+  console.log('[TEST-LOAD] 🚀 SOFORTIGER TEST-DOWNLOAD GESTARTET!');
+  console.log('[TEST-LOAD] Lade 500MB XML von LUCID...');
+
+  // Response sofort senden
+  res.json({
+    ok: true,
+    message: 'TEST-LOAD gestartet! Monitor mit: GET /api/stats',
+    info: 'Dies lädt die ECHTE 500MB XML-Datei SOFORT ohne Verzögerung!'
+  });
+
+  // Überschreibe die 5-Sekunden Verzögerung für diesen Test
   try {
-    await updateCache(true);
-    res.json({ 
-      ok: true, 
-      message: 'Cache erfolgreich aktualisiert',
-      entries: memoryCache.data.size 
-    });
+    const startTime = Date.now();
+    console.log('[TEST-LOAD] Starte Download OHNE Verzögerung...');
+
+    // Direkt die Download-Funktion aufrufen
+    const newData = await downloadAndParseXML();
+
+    const duration = Date.now() - startTime;
+    console.log(`[TEST-LOAD] ✅ ERFOLG! ${newData.size} Einträge in ${(duration/1000).toFixed(1)}s geladen`);
+
+    // Update Memory Cache
+    memoryCache.data = newData;
+    memoryCache.lastUpdate = Date.now();
+
+    // Speichere auf Disk
+    const cacheData = {
+      lastUpdate: memoryCache.lastUpdate,
+      count: newData.size,
+      data: Array.from(newData.entries())
+    };
+
+    await fs.writeFile(CACHE_FILE, JSON.stringify(cacheData), 'utf-8');
+    console.log('[TEST-LOAD] Cache auf Disk gespeichert');
+
   } catch (error) {
-    res.status(500).json({ 
-      ok: false, 
-      error: 'Cache Update fehlgeschlagen: ' + error.message 
-    });
+    console.error('[TEST-LOAD] ❌ FEHLER beim Test-Load:', error.message);
+    if (error.response?.status === 429) {
+      console.error('[TEST-LOAD] Rate Limit erreicht! Warte vor nächstem Versuch.');
+    }
   }
 });
 
