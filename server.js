@@ -190,6 +190,10 @@ async function updateCache(force = false) {
   memoryCache.isLoading = true;
 
   try {
+    // Warte 5 Sekunden vor Download (Rate Limit Schutz)
+    console.log('[CACHE] ⏳ Warte 5 Sekunden (Rate Limit Schutz)...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
     // Lade neue Daten
     const newData = await downloadAndParseXML();
     
@@ -395,39 +399,42 @@ app.get('/api/stats', (req, res) => {
 // === STARTUP ===
 
 async function startServer() {
-  console.log('[START] LUCID Lookup Service startet... (Debug Version v2)');
+  console.log('[START] LUCID Lookup Service startet... (v3 - Rate Limit Fix)');
   console.log(`[CONFIG] Cache TTL: ${config.cache_ttl_hours} Stunden`);
   console.log(`[CONFIG] API Key: ${config.internal_api_key ? 'Konfiguriert' : 'Nicht gesetzt'}`);
   console.log(`[CONFIG] LUCID API URL: ${config.api_url}`);
 
   // Versuche Cache von Disk zu laden
   const loadedFromDisk = await loadCacheFromDisk();
-  
-  // Wenn kein Cache oder zu alt, lade neu
+
   if (!loadedFromDisk) {
-    console.log('[START] Initiales Laden der LUCID-Daten...');
-    try {
-      await updateCache(true);
-    } catch (error) {
-      console.error('[START] Initiales Laden fehlgeschlagen:', error.message);
-      console.log('[START] Service startet trotzdem, Cache wird beim ersten Request geladen');
-    }
+    console.log('[START] ⚠️ Kein Cache auf Disk gefunden');
+    console.log('[START] 🔴 AUTOMATISCHES LADEN DEAKTIVIERT (429 Rate Limit Vermeidung)');
+    console.log('[START] ℹ️ Cache kann manuell über /admin/refresh geladen werden');
+    console.log('[START] ℹ️ Oder automatisch beim ersten API-Request (mit Verzögerung)');
+    // NICHT automatisch laden beim Start - verhindert 429!
   } else {
-    // Prüfe ob Update nötig
+    console.log(`[START] ✅ Cache von Disk geladen: ${memoryCache.data.size} Einträge`);
+    // Prüfe Alter aber lade NICHT automatisch nach
     const hoursSinceUpdate = (Date.now() - memoryCache.lastUpdate) / (1000 * 60 * 60);
     if (hoursSinceUpdate >= config.cache_ttl_hours) {
-      console.log(`[START] Cache veraltet (${hoursSinceUpdate.toFixed(1)}h), starte Update...`);
-      updateCache(); // Async im Hintergrund
+      console.log(`[START] ⚠️ Cache veraltet (${hoursSinceUpdate.toFixed(1)}h alt)`);
+      console.log('[START] ℹ️ Nutze /admin/refresh für manuelles Update');
+      // KEIN automatisches Update mehr!
     }
   }
 
-  // Cron Job für automatische Updates (täglich um 2:30 Uhr)
-  cron.schedule('30 2 * * *', () => {
-    console.log('[CRON] Automatisches Cache Update gestartet');
-    updateCache(true);
-  }, {
-    timezone: 'Europe/Berlin'
-  });
+  // CRON DEAKTIVIERT - Manuelle Updates über /admin/refresh
+  // Rate Limit Problem vermeiden
+  console.log('[CRON] ⚠️ Automatische Updates DEAKTIVIERT');
+  console.log('[CRON] ℹ️ Nutze POST /admin/refresh mit API-Key für Updates');
+
+  // cron.schedule('30 2 * * *', () => {
+  //   console.log('[CRON] Automatisches Cache Update gestartet');
+  //   updateCache(true);
+  // }, {
+  //   timezone: 'Europe/Berlin'
+  // });
 
   // Server starten
   app.listen(PORT, () => {
