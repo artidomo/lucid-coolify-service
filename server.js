@@ -6,6 +6,7 @@
 import express from 'express';
 import axios from 'axios';
 import { XMLParser } from 'fast-xml-parser';
+import XmlStream from 'xml-stream';
 import cron from 'node-cron';
 import cors from 'cors';
 import fs from 'fs/promises';
@@ -45,153 +46,172 @@ app.use((req, res, next) => {
 });
 
 /**
- * XML von LUCID API herunterladen und parsen
+ * XML von LUCID API herunterladen und parsen - STREAMING VERSION
+ * Löst ERR_STRING_TOO_LONG für 568MB XML-Dateien
  */
 async function downloadAndParseXML() {
-  console.log('[LUCID] Starte Download der XML-Daten...');
+  console.log('[LUCID] Starte STREAMING Download der XML-Daten...');
   console.log('[LUCID] URL:', config.api_url);
   console.log('[LUCID] Token (erste 20 Zeichen):', config.zsvr_token.substring(0, 20) + '...');
-  
-  try {
-    // Download XML mit Token
-    console.log('[LUCID] Sende Anfrage an LUCID API...');
-    const response = await axios({
-      method: 'GET',
-      url: config.api_url,
-      params: {
-        token: config.zsvr_token  // Token als URL-Parameter laut API-Doku!
-      },
-      headers: {
-        'Accept': 'application/xml',
-        'Accept-Encoding': 'identity' // KEINE Kompression! Verhindert ERR_STRING_TOO_LONG beim Dekomprimieren
-      },
-      responseType: 'text',
-      timeout: 600000, // 10 Minuten Timeout - unkomprimierte 500MB dauern länger!
-      maxContentLength: 2000 * 1024 * 1024, // 2GB max - LUCID Datei ist sehr groß!
-      maxBodyLength: 2000 * 1024 * 1024
-    });
 
-    console.log('[LUCID] Response Status:', response.status);
-    console.log('[LUCID] Response Headers:', JSON.stringify(response.headers));
-    console.log('[LUCID] Response Größe:', response.data.length, 'Bytes');
-    console.log('[LUCID] Erste 500 Zeichen der Response:', response.data.substring(0, 500));
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Map für Produzenten-Daten
+      const dataMap = new Map();
+      let producerCount = 0;
+      const startTime = Date.now();
 
-    // Parse XML mit fast-xml-parser (effizienter als xml2js)
-    console.log('[LUCID] Starte XML Parsing...');
-    const parser = new XMLParser({
-      ignoreAttributes: false,
-      attributeNamePrefix: '',
-      textNodeName: 'value'
-    });
-    
-    const result = parser.parse(response.data);
-    console.log('[LUCID] XML geparst, prüfe Struktur...');
-    console.log('[LUCID] Root Keys:', Object.keys(result || {}));
-    
-    // Finde die Produzenten im XML (Struktur kann variieren)
-    let producers = [];
-
-    // Debug: Zeige die XML-Struktur
-    if (result?.Root?.ListOfProducers?.Producer) {
-      console.log('[LUCID] Gefunden: Root.ListOfProducers.Producer');
-      producers = Array.isArray(result.Root.ListOfProducers.Producer)
-        ? result.Root.ListOfProducers.Producer
-        : [result.Root.ListOfProducers.Producer];
-    } else if (result?.producers?.producer) {
-      console.log('[LUCID] Gefunden: result.producers.producer');
-      producers = Array.isArray(result.producers.producer)
-        ? result.producers.producer
-        : [result.producers.producer];
-    } else if (result?.RegisterExcerpt?.Producer) {
-      console.log('[LUCID] Gefunden: result.RegisterExcerpt.Producer');
-      producers = Array.isArray(result.RegisterExcerpt.Producer)
-        ? result.RegisterExcerpt.Producer
-        : [result.RegisterExcerpt.Producer];
-    } else if (result?.Producers?.Producer) {
-      console.log('[LUCID] Gefunden: result.Producers.Producer');
-      producers = Array.isArray(result.Producers.Producer)
-        ? result.Producers.Producer
-        : [result.Producers.Producer];
-    } else {
-      console.log('[LUCID] WARNUNG: Keine bekannte Struktur gefunden!');
-      console.log('[LUCID] Vollständige Struktur (erste Ebene):', JSON.stringify(result, null, 2).substring(0, 1000));
-    }
-
-    console.log(`[LUCID] ${producers.length} Produzenten gefunden`);
-    if (producers.length > 0) {
-      console.log('[LUCID] Beispiel Produzent:', JSON.stringify(producers[0], null, 2).substring(0, 500));
-    }
-
-    // In Map speichern für schnelle Lookups
-    const dataMap = new Map();
-    
-    for (const producer of producers) {
-      // Verschiedene Feldnamen unterstützen
-      const regNum = producer.RegistrationNumber || 
-                     producer.registrationNumber || 
-                     producer.registration_number || 
-                     producer.RegNr || '';
-      
-      if (regNum) {
-        const normalized = regNum.trim().toUpperCase();
-        dataMap.set(normalized, {
-          registration_number: regNum,
-          company_name: producer.ProducerName || producer.Name || producer.CompanyName || producer.name || '',
-          vat_number: producer.VATNumber || producer.UstIdNr || producer.vat_number || '',
-          tax_number: producer.TaxNumber || producer.Steuernummer || producer.tax_number || '',
-          address: producer.Address || producer.address || '',
-          city: producer.City || producer.city || '',
-          postal_code: producer.PostalCode || producer.postal_code || ''
-        });
-      }
-    }
-
-    console.log(`[LUCID] Map erstellt mit ${dataMap.size} Einträgen`);
-    return dataMap;
-  } catch (error) {
-    console.error('[LUCID] ❌ FEHLER beim Download/Parsing!');
-    console.error('[LUCID] Error Type:', error.constructor.name);
-    console.error('[LUCID] Error Message:', error.message);
-    console.error('[LUCID] Full Error:', error);
-
-    if (error.response) {
-      console.error('[LUCID] Response Status:', error.response.status);
-      console.error('[LUCID] Response Status Text:', error.response.statusText);
-      console.error('[LUCID] Response Headers:', JSON.stringify(error.response.headers));
-      console.error('[LUCID] Response Data (erste 2000 Zeichen):',
-        error.response.data ? String(error.response.data).substring(0, 2000) : 'Keine Daten');
-
-      // Spezielle Behandlung für 429 Rate Limit
-      if (error.response.status === 429) {
-        console.error('[LUCID] 🔴 RATE LIMIT ERREICHT! API blockiert weitere Anfragen.');
-        console.error('[LUCID] Retry-After Header:', error.response.headers['retry-after']);
-      }
-    }
-
-    if (error.config) {
-      console.error('[LUCID] Request URL:', error.config.url);
-      console.error('[LUCID] Full Request Config:', {
-        url: error.config.url,
-        method: error.config.method,
-        headers: error.config.headers,
-        params: error.config.params,
-        timeout: error.config.timeout
+      // Download XML mit Token - STREAMING!
+      console.log('[LUCID] Sende Anfrage an LUCID API (Stream-Modus)...');
+      const response = await axios({
+        method: 'GET',
+        url: config.api_url,
+        params: {
+          token: config.zsvr_token
+        },
+        headers: {
+          'Accept': 'application/xml',
+          'Accept-Encoding': 'identity' // Keine Kompression für Stream
+        },
+        responseType: 'stream', // ← KRITISCH: Stream statt Text!
+        timeout: 600000, // 10 Minuten
+        maxContentLength: Infinity, // Keine Limits für Stream
+        maxBodyLength: Infinity
       });
-    }
 
-    // Netzwerk-Fehler
-    if (error.code) {
-      console.error('[LUCID] Error Code:', error.code);
-      if (error.code === 'ECONNABORTED') {
-        console.error('[LUCID] ⏱️ TIMEOUT! Download hat zu lange gedauert.');
-      }
-      if (error.code === 'ENOTFOUND') {
-        console.error('[LUCID] 🔍 DNS FEHLER! Server nicht gefunden.');
-      }
-    }
+      console.log('[LUCID] Stream gestartet, Status:', response.status);
+      console.log('[LUCID] Content-Length:', response.headers['content-length'], 'Bytes');
 
-    throw error;
-  }
+      // XML Stream Parser erstellen
+      const xml = new XmlStream(response.data);
+
+      // Event für JEDES <Producer> Element (alle gängigen LUCID XML-Strukturen)
+      // xml-stream unterstützt CSS-ähnliche Selektoren
+      xml.collect('Producer'); // Sammelt alle Producer-Elemente
+      xml.collect('producer'); // Alternative Schreibweise
+
+      // Event wenn ein Producer-Element komplett ist
+      xml.on('endElement: Producer', (producer) => {
+        producerCount++;
+
+        // Extrahiere Felder (verschiedene Feldnamen unterstützen)
+        const regNum = producer.RegistrationNumber ||
+                       producer.registrationNumber ||
+                       producer.registration_number ||
+                       producer.RegNr || '';
+
+        if (regNum) {
+          const normalized = regNum.trim().toUpperCase();
+          dataMap.set(normalized, {
+            registration_number: regNum,
+            company_name: producer.ProducerName || producer.Name || producer.CompanyName || producer.name || '',
+            vat_number: producer.VATNumber || producer.UstIdNr || producer.vat_number || '',
+            tax_number: producer.TaxNumber || producer.Steuernummer || producer.tax_number || '',
+            address: producer.Address || producer.address || '',
+            city: producer.City || producer.city || '',
+            postal_code: producer.PostalCode || producer.postal_code || ''
+          });
+        }
+
+        // Progress-Log alle 10.000 Einträge
+        if (producerCount % 10000 === 0) {
+          const elapsed = Math.floor((Date.now() - startTime) / 1000);
+          console.log(`[LUCID] Verarbeitet: ${producerCount.toLocaleString()} Produzenten... (${elapsed}s)`);
+        }
+      });
+
+      // Alternative Schreibweise (lowercase)
+      xml.on('endElement: producer', (producer) => {
+        producerCount++;
+
+        const regNum = producer.RegistrationNumber ||
+                       producer.registrationNumber ||
+                       producer.registration_number ||
+                       producer.RegNr || '';
+
+        if (regNum) {
+          const normalized = regNum.trim().toUpperCase();
+          dataMap.set(normalized, {
+            registration_number: regNum,
+            company_name: producer.ProducerName || producer.Name || producer.CompanyName || producer.name || '',
+            vat_number: producer.VATNumber || producer.UstIdNr || producer.vat_number || '',
+            tax_number: producer.TaxNumber || producer.Steuernummer || producer.tax_number || '',
+            address: producer.Address || producer.address || '',
+            city: producer.City || producer.city || '',
+            postal_code: producer.PostalCode || producer.postal_code || ''
+          });
+        }
+
+        if (producerCount % 10000 === 0) {
+          const elapsed = Math.floor((Date.now() - startTime) / 1000);
+          console.log(`[LUCID] Verarbeitet: ${producerCount.toLocaleString()} Produzenten... (${elapsed}s)`);
+        }
+      });
+
+      // Stream Ende - Erfolg!
+      xml.on('end', () => {
+        const duration = Math.floor((Date.now() - startTime) / 1000);
+        console.log(`[LUCID] ✅ Stream abgeschlossen! ${producerCount.toLocaleString()} Produzenten gefunden`);
+        console.log(`[LUCID] Map erstellt mit ${dataMap.size.toLocaleString()} Einträgen`);
+        console.log(`[LUCID] Gesamt-Dauer: ${duration} Sekunden (${Math.floor(duration / 60)}min ${duration % 60}s)`);
+
+        if (dataMap.size > 0) {
+          // Zeige ersten Eintrag als Beispiel
+          const firstEntry = Array.from(dataMap.entries())[0];
+          console.log('[LUCID] Beispiel-Eintrag:', JSON.stringify(firstEntry, null, 2).substring(0, 300));
+        }
+
+        resolve(dataMap);
+      });
+
+      // Fehler-Handling - XML Parse Fehler
+      xml.on('error', (error) => {
+        console.error('[LUCID] ❌ XML Parse Fehler:', error.message);
+        console.error('[LUCID] Error Stack:', error.stack);
+        reject(error);
+      });
+
+      // Fehler-Handling - HTTP Stream Fehler
+      response.data.on('error', (error) => {
+        console.error('[LUCID] ❌ HTTP Stream Fehler:', error.message);
+        console.error('[LUCID] Error Code:', error.code);
+        reject(error);
+      });
+
+    } catch (error) {
+      console.error('[LUCID] ❌ FEHLER beim Download/Parsing!');
+      console.error('[LUCID] Error Type:', error.constructor.name);
+      console.error('[LUCID] Error Message:', error.message);
+
+      if (error.response) {
+        console.error('[LUCID] Response Status:', error.response.status);
+        console.error('[LUCID] Response Status Text:', error.response.statusText);
+        console.error('[LUCID] Response Headers:', JSON.stringify(error.response.headers));
+
+        // Spezielle Behandlung für 429 Rate Limit
+        if (error.response.status === 429) {
+          console.error('[LUCID] 🔴 RATE LIMIT ERREICHT! API blockiert weitere Anfragen.');
+          console.error('[LUCID] Retry-After Header:', error.response.headers['retry-after']);
+        }
+      }
+
+      if (error.config) {
+        console.error('[LUCID] Request URL:', error.config.url);
+      }
+
+      if (error.code) {
+        console.error('[LUCID] Error Code:', error.code);
+        if (error.code === 'ECONNABORTED') {
+          console.error('[LUCID] ⏱️ TIMEOUT! Download hat zu lange gedauert.');
+        }
+        if (error.code === 'ENOTFOUND') {
+          console.error('[LUCID] 🔍 DNS FEHLER! Server nicht gefunden.');
+        }
+      }
+
+      reject(error);
+    }
+  });
 }
 
 /**

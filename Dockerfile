@@ -2,8 +2,16 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# WICHTIG: Build-Tools für xml-stream (node-expat) installieren
+# xml-stream benötigt C++ Compiler für native Bindings
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    expat-dev
+
 # Kopiere package.json und installiere dependencies
-COPY package.json ./
+COPY package.json package-lock.json* ./
 RUN npm install --production
 
 # Kopiere den Server-Code
