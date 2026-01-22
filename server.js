@@ -62,12 +62,14 @@ async function downloadAndParseXML() {
         token: config.zsvr_token  // Token als URL-Parameter laut API-Doku!
       },
       headers: {
-        'Accept': 'application/xml'
+        'Accept': 'application/xml',
+        'Accept-Encoding': 'gzip, deflate' // KEIN Brotli! Verhindert ERR_STRING_TOO_LONG
       },
       responseType: 'text',
       timeout: 300000, // 5 Minuten Timeout
       maxContentLength: 2000 * 1024 * 1024, // 2GB max - LUCID Datei ist sehr groß!
-      maxBodyLength: 2000 * 1024 * 1024
+      maxBodyLength: 2000 * 1024 * 1024,
+      decompress: true // Axios dekomprimiert gzip/deflate automatisch
     });
 
     console.log('[LUCID] Response Status:', response.status);
