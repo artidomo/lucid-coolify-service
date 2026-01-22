@@ -63,13 +63,12 @@ async function downloadAndParseXML() {
       },
       headers: {
         'Accept': 'application/xml',
-        'Accept-Encoding': 'gzip, deflate' // KEIN Brotli! Verhindert ERR_STRING_TOO_LONG
+        'Accept-Encoding': 'identity' // KEINE Kompression! Verhindert ERR_STRING_TOO_LONG beim Dekomprimieren
       },
       responseType: 'text',
-      timeout: 300000, // 5 Minuten Timeout
+      timeout: 600000, // 10 Minuten Timeout - unkomprimierte 500MB dauern länger!
       maxContentLength: 2000 * 1024 * 1024, // 2GB max - LUCID Datei ist sehr groß!
-      maxBodyLength: 2000 * 1024 * 1024,
-      decompress: true // Axios dekomprimiert gzip/deflate automatisch
+      maxBodyLength: 2000 * 1024 * 1024
     });
 
     console.log('[LUCID] Response Status:', response.status);
